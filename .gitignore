@@ -1,0 +1,9 @@
+# Full API payloads, one per scan — megabytes per day, never useful in the repo.
+raw_log.jsonl
+
+# Local credentials. NEVER commit this.
+.env
+
+__pycache__/
+*.pyc
+seen.tmp

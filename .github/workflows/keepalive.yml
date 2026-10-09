@@ -1,0 +1,44 @@
+name: keepalive
+
+# GitHub disables scheduled workflows after 60 days with no repository
+# activity. The catch: commits pushed with the built-in GITHUB_TOKEN (what
+# bounty-watch.yml uses for seen.json) are bot activity and are not reliably
+# counted, so a repo that looks busy can still get switched off.
+#
+# This workflow pushes one commit a month authenticated as YOU, via a
+# personal access token, which does count. It is optional: without the
+# KEEPALIVE_PAT secret it just prints a reminder and does nothing.
+
+on:
+  schedule:
+    - cron: "17 6 1 * *" # 06:17 UTC on the 1st of each month
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: No PAT configured
+        if: ${{ secrets.KEEPALIVE_PAT == '' }}
+        run: |
+          echo "KEEPALIVE_PAT is not set."
+          echo "Click 'Run workflow' on bounty-watch once a month instead,"
+          echo "or add the PAT — see README."
+
+      - uses: actions/checkout@v4
+        if: ${{ secrets.KEEPALIVE_PAT != '' }}
+        with:
+          token: ${{ secrets.KEEPALIVE_PAT }}
+
+      - name: Push a dated keepalive commit
+        if: ${{ secrets.KEEPALIVE_PAT != '' }}
+        run: |
+          date -u "+%Y-%m-%dT%H:%M:%SZ" > .keepalive
+          git config user.name  "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git add .keepalive
+          git diff --cached --quiet || git commit -m "keepalive: $(cat .keepalive)"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
