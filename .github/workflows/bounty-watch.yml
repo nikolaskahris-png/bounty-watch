@@ -1,0 +1,68 @@
+name: bounty-watch
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub's cron fires late under load — treat this as
+    # "at least every 30 min", sometimes 40-60. There is no way to make it
+    # punctual on the free tier, and for a bounty deadline days away it does
+    # not matter.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+# Each run commits seen.json back to the repo.
+permissions:
+  contents: write
+
+# Never let a late run overlap a fresh one: two runs pushing seen.json at the
+# same time is how you get a rejected push and a lost state file.
+concurrency:
+  group: bounty-watch
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Scan
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+          # The runner is destroyed after each run, so the raw payload log has
+          # nowhere to live. Writing it would only waste disk.
+          RAW_LOG_KEEP: "0"
+        run: python bounty_watch.py --once
+
+      - name: Commit state
+        # Runs even when the scan exited non-zero: alerts that were already
+        # sent must stay recorded, or they get sent again next run.
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- seen.json alerts.jsonl
+          # No-op when nothing changed, so the history stays readable.
+          if git diff --cached --quiet; then
+            echo "state unchanged — nothing to commit"
+            exit 0
+          fi
+          git commit -m "state: $(date -u '+%Y-%m-%d %H:%M UTC')"
+          # A concurrent run could have pushed first; rebase instead of failing.
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && \
+              git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "push attempt $i failed, retrying"
+            sleep 5
+          done
+          exit 1
