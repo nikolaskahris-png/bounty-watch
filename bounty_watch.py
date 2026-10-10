@@ -35,11 +35,15 @@ import requests
 # CONFIG — filters you may want to tune
 # ----------------------------------------------------------------------------
 
-# Which regions you can actually enter.
-ALLOWED_REGIONS = {"GLOBAL", "GREECE"}
+# Region is NOT a filter. Country-locked listings are the least crowded ones,
+# so they are worth seeing and judging by hand — the alert flags the region
+# instead of hiding the listing.
 
 # Skip anything with more competition than this already.
 MAX_SUBMISSIONS = 40
+
+# At or below this many submissions, the alert gets a LOW COMPETITION flag.
+LOW_SUBMISSIONS = 10
 
 # Skip listings whose deadline is sooner than this — not enough time to work.
 MIN_HOURS_LEFT = 24
@@ -223,11 +227,16 @@ def passes_list_filter(item, now):
     return True, "ok"
 
 
+def submission_count(item):
+    return (item.get("_count") or {}).get("Submission", 0)
+
+
 def passes_detail_filter(detail):
-    """Checks needing the detail payload. Returns (ok, reason, region)."""
+    """Checks needing the detail payload. Returns (ok, reason, region).
+
+    Region is reported, never rejected on.
+    """
     region = (detail.get("region") or "").strip()
-    if region.upper() not in ALLOWED_REGIONS:
-        return False, f"region={region}", region
 
     skills = detail.get("skills") or []
     names = {(s.get("skills") or "").upper() for s in skills}
@@ -260,8 +269,20 @@ def send_telegram(text):
         return False
 
 
+def region_line(region, unverified):
+    """The region, stated loudly. Anything other than Global is flagged,
+    because eligibility is then something you have to check yourself."""
+    if unverified:
+        return "📍 <b>REGION UNKNOWN</b> — details fetch failed, check it yourself"
+    if not region:
+        return "📍 <b>REGION NOT STATED</b> — check the listing"
+    if region.upper() == "GLOBAL":
+        return "🌍 <b>GLOBAL</b> — open to everyone"
+    return f"📍 <b>{html.escape(region.upper())} ONLY</b> — region-locked, check if you qualify"
+
+
 def format_alert(item, detail, region, unverified):
-    subs = (item.get("_count") or {}).get("Submission", 0)
+    subs = submission_count(item)
     dl = parse_deadline(item.get("deadline"))
     now = datetime.now(timezone.utc)
     days = (dl - now).days if dl else "?"
@@ -279,15 +300,16 @@ def format_alert(item, detail, region, unverified):
             vals = [f"{v}" for _, v in sorted(rewards.items(), key=lambda kv: str(kv[0]))]
             places = f"\n🏆 {len(vals)} places: {' / '.join(vals)}"
 
-    flag = "\n⚠️ <b>UNVERIFIED</b> — could not fetch details, check region yourself" if unverified else ""
+    heat = "  🔥 <b>LOW COMPETITION</b>" if subs <= LOW_SUBMISSIONS else ""
 
     # Titles and sponsor names are free text written by sponsors: a stray <
     # or & makes Telegram reject the whole HTML message with a 400.
     return (
         f"<b>{html.escape(str(title))}</b>\n"
-        f"💰 {reward} {html.escape(str(token))}  ·  👥 {subs} submissions{places}\n"
-        f"🌍 {html.escape(region) or '?'}  ·  ⏳ {days} days left\n"
-        f"🏢 {html.escape(str(sponsor))}{flag}\n\n"
+        f"{region_line(region, unverified)}\n"
+        f"👥 <b>{subs}</b> submissions{heat}\n"
+        f"💰 {reward} {html.escape(str(token))}  ·  ⏳ {days} days left{places}\n"
+        f"🏢 {html.escape(str(sponsor))}\n\n"
         f"{BASE}/earn/listing/{slug}"
     )
 
@@ -314,7 +336,9 @@ def run_once(seen):
 
     log(f"{len(items)} listings → {len(shortlist)} pass the cheap filter")
 
-    new_alerts = 0
+    # Collect everything that passes before sending anything, so the alerts
+    # can go out in a deliberate order.
+    matches = []
     for item in shortlist:
         lid = item.get("id")
         if not lid or lid in seen:
@@ -326,13 +350,7 @@ def run_once(seen):
 
         if detail is None:
             # Could not verify. Alert anyway, clearly flagged.
-            text = format_alert(item, None, "", unverified=True)
-            if send_telegram(text):
-                seen.add(lid)
-                new_alerts += 1
-                append_jsonl(ALERT_LOG, {"at": now.isoformat(), "id": lid,
-                                         "slug": slug, "verified": False})
-                save_seen(seen)  # flush now: a killed run must not re-alert
+            matches.append((item, None, "", True))
             continue
 
         ok, reason, region = passes_detail_filter(detail)
@@ -341,15 +359,27 @@ def run_once(seen):
             log(f"  skip {slug}: {reason}")
             continue
 
-        text = format_alert(item, detail, region, unverified=False)
+        matches.append((item, detail, region, False))
+
+    # Most-crowded first, so the least-crowded bounty is the LAST message to
+    # arrive — in a chat the newest message is the one sitting in front of you.
+    matches.sort(key=lambda m: submission_count(m[0]), reverse=True)
+
+    new_alerts = 0
+    for item, detail, region, unverified in matches:
+        lid = item.get("id")
+        slug = item.get("slug", "")
+        text = format_alert(item, detail, region, unverified=unverified)
         if send_telegram(text):
             seen.add(lid)
             new_alerts += 1
             append_jsonl(ALERT_LOG, {"at": now.isoformat(), "id": lid,
                                      "slug": slug, "region": region,
-                                     "verified": True})
+                                     "subs": submission_count(item),
+                                     "verified": not unverified})
             save_seen(seen)  # flush now: a killed run must not re-alert
-            log(f"  ALERT {slug} ({region})")
+            log(f"  ALERT {slug} ({region or 'region?'}, "
+                f"{submission_count(item)} subs)")
 
     save_seen(seen)
     return seen, new_alerts, True
