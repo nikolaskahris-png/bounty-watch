@@ -8,8 +8,13 @@ Filters (in `bounty_watch.py`, near the top):
 - not `isWinnersAnnounced`
 - deadline in the future and at least 24 hours away
 - 40 submissions or fewer
-- region Global or Greece
 - not content-only (CONTENT / DESIGN / GROWTH / COMMUNITY)
+
+Region is deliberately **not** a filter: country-locked listings are the least
+crowded, so they are worth judging by hand. Every alert states the region, and
+flags anything other than Global as region-locked. Alerts are sent
+most-crowded first, so the least-crowded one is the newest message in the
+chat, and anything at or under 10 submissions is tagged LOW COMPETITION.
 
 `status` is **not** used: the API returns `"OPEN"` for every listing, including
 ones whose winners were announced months ago.
