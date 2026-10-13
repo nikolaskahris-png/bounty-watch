@@ -7,3 +7,4 @@ raw_log.jsonl
 __pycache__/
 *.pyc
 seen.tmp
+harvested.tmp

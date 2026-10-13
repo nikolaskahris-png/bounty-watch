@@ -1,0 +1,60 @@
+name: harvest
+
+on:
+  schedule:
+    # Once a day, well away from the :00/:30 bounty-watch slots.
+    - cron: "40 4 * * *"
+  workflow_dispatch:
+    inputs:
+      max:
+        description: "Listings to harvest this run"
+        required: false
+        default: "120"
+
+permissions:
+  contents: write
+
+# Never two harvests at once: both would append the same listings.
+concurrency:
+  group: harvest
+  cancel-in-progress: false
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Harvest
+        env:
+          HARVEST_MAX: ${{ inputs.max || '120' }}
+        run: python harvest.py
+
+      - name: Commit harvested data
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- harvested.json data
+          if git diff --cached --quiet; then
+            echo "nothing newly harvested — no commit"
+            exit 0
+          fi
+          git commit -m "harvest: $(date -u '+%Y-%m-%d %H:%M UTC')"
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && \
+              git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "push attempt $i failed, retrying"
+            sleep 5
+          done
+          exit 1
