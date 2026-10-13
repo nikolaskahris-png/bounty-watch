@@ -7,14 +7,41 @@ Filters (in `bounty_watch.py`, near the top):
 
 - not `isWinnersAnnounced`
 - deadline in the future and at least 24 hours away
-- 40 submissions or fewer
-- not content-only (CONTENT / DESIGN / GROWTH / COMMUNITY)
+- **25 submissions or fewer**
+
+That is the whole filter. Every part of it is justified by the measured data
+below; nothing is left in on judgement.
+
+## Win rate by submission count
+
+From `harvest.py`: **1,848 winners across 317 listings, measured 2026-10-13**.
+If you are reading this months later, re-run `harvest.py` and recompute — these
+numbers are a snapshot, not a constant.
+
+| Submissions in listing | Win rate |
+| --- | --- |
+| 0–10 | **38.2%** |
+| 11–25 | **21.9%** |
+| 26–50 | 9.7% |
+| 51–100 | 8.0% |
+| 101–250 | 4.1% |
+| 251+ | 2.1% |
+| *base rate, all submissions* | *4.6%* |
+
+`MAX_SUBMISSIONS = 25` sits exactly on the cliff: 21.9% at 11–25 against 9.7%
+at 26–50. Since the cap is 25, only the first two bands can ever appear in an
+alert.
+
+**Skills are not filtered on.** Content appears in 86.7% of winning listings
+and 84.7% of losing ones — a lift of 1.02, i.e. no signal whatsoever. The old
+content-only filter discarded most of the board in exchange for nothing. Skills
+are shown in the alert because they are worth reading, not worth rejecting on.
 
 Region is deliberately **not** a filter: country-locked listings are the least
 crowded, so they are worth judging by hand. Every alert states the region, and
 flags anything other than Global as region-locked. Alerts are sent
-most-crowded first, so the least-crowded one is the newest message in the
-chat, and anything at or under 10 submissions is tagged LOW COMPETITION.
+most-crowded first, so the least-crowded one is the newest message in the chat,
+and each one carries its win-rate band, with the 0–10 band flagged as TOP BAND.
 
 `status` is **not** used: the API returns `"OPEN"` for every listing, including
 ones whose winners were announced months ago.
