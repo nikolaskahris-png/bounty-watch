@@ -99,3 +99,92 @@ Softer failures that stay green, and the log line to look for:
 
 So: red = structure changed. Green and silent for a week while Earn clearly has
 open bounties = check a `skip` line.
+
+
+---
+
+# harvest.py — what actually wins
+
+Collects the submissions that won completed Superteam Earn listings, so
+"what wins" can be measured. Runs once a day via `.github/workflows/harvest.yml`
+and commits its data back. A listing is harvested once, after its winners are
+announced, and never re-fetched (`harvested.json`).
+
+## The two endpoints, discovered rather than assumed
+
+**Enumerating completed listings** — `?type=bounty` only ever returns open
+ones, and `isWinnersAnnounced`, `type=project` and `type=grant` are all
+ignored as query params. The archive is reachable through a different route:
+
+```
+GET /api/listings/live?take=50&deadline=<ISO8601>
+```
+
+Found by downloading the listing page's JS chunks and grepping for how the
+client builds URLs — the paths are template literals, so searching for quoted
+`"/api/..."` strings finds nothing at all. Measured behaviour:
+
+| Param | Reality |
+| --- | --- |
+| `take` | Works, capped at 50 (`take=200` returns 50) |
+| `deadline` | **A cursor.** Returns `deadline >= value`, ascending, inclusive — so each page repeats one item. Paginate on the last deadline. |
+| `skip`, `page`, `order` | **Silently ignored** — byte-identical payloads |
+
+Every item has `isWinnersAnnounced: true`. Despite the name `live`, this is the
+completed archive: 1,464 listings as of 2026-10-13. And `status` is `"OPEN"`
+here too, so it remains useless.
+
+**Fetching a listing's submissions** — there is **no public JSON API** for the
+list. The Submissions tab is the server-rendered page
+`/earn/listing/[slug]/submission`, so its data arrives as Next.js props:
+
+```
+GET /_next/data/<buildId>/earn/listing/<slug>/submission.json?slug=<slug>
+```
+
+One request returns `pageProps.submission[]` *and* `pageProps.bounty` with the
+full listing metadata, so it covers both. `buildId` changes on every deploy and
+a stale one 404s, so it is scraped fresh each run, re-scraped once on a 404,
+and failing that the script parses `__NEXT_DATA__` out of the HTML page, which
+needs no buildId.
+
+`/api/submission/get/` exists but takes a single id and serves the submit form,
+not a public list. `/api/listings/<id>/submission-count/` returns a bare integer.
+
+## What the API does not expose
+
+Recorded as explicit `null` rather than quietly omitted:
+
+- **follower / reputation figures.** A submission's user object carries only
+  `id`, `username`, `firstName`, `lastName`, `photo`. The only engagement
+  number available anywhere is the submission's own like count.
+- **submission text.** Public submissions expose `link` only.
+
+## Files
+
+| File | Contents |
+| --- | --- |
+| `harvested.json` | Slugs already done. Committed back, like `seen.json`. |
+| `data/listings.jsonl` | One row per listing: sponsor, region, skills, rewards, prize count, total submissions. |
+| `data/submissions-<YYYY-MM>.jsonl` | One row per submission, join to listings on `listing_slug`. |
+| `data/raw-<YYYY-MM>.jsonl.gz` | Raw `pageProps`, gzipped, so an unparsed field can be recomputed instead of re-scraped. |
+| `data/harvest_failures.jsonl` | Every failed fetch, with stage and error. Failures are never marked harvested, so they retry. |
+
+**Why sharded and normalised.** Measured: 127,066 submissions across the
+archive. One fat self-contained row per submission came to 1.16 KB, i.e.
+~147 MB — past GitHub's 100 MB per-file limit. Worse, git stores a complete new
+copy of an append-only file on every commit, so a daily-committed 147 MB file
+is fatal within a week. Sharding by announcement month means a daily commit
+rewrites ~1 MB, and moving listing metadata out of every row (it was repeated
+on all 87 rows of a listing) took rows to 571 bytes, ~72 MB for the lot.
+
+## Running it
+
+```bash
+python harvest.py              # HARVEST_MAX listings (default 120)
+python harvest.py --max 300    # bigger bite; backfill spreads over days
+```
+
+Each run prints one summary line: listings checked, newly harvested, winners
+recorded, and how many remain to backfill. A failed fetch is logged and skipped
+without being marked harvested, so the next run retries it.
