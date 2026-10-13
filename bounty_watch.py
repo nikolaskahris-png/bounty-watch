@@ -39,18 +39,29 @@ import requests
 # so they are worth seeing and judging by hand — the alert flags the region
 # instead of hiding the listing.
 
-# Skip anything with more competition than this already.
-MAX_SUBMISSIONS = 40
-
-# At or below this many submissions, the alert gets a LOW COMPETITION flag.
-LOW_SUBMISSIONS = 10
+# Skip anything with more competition than this already. 25 is where the
+# measured win rate falls off a cliff: 21.9% at 11-25 vs 9.7% at 26-50.
+MAX_SUBMISSIONS = 25
 
 # Skip listings whose deadline is sooner than this — not enough time to work.
 MIN_HOURS_LEFT = 24
 
-# Skills that mean "content bounty" — these get filtered out.
-# (Based on the listings reviewed: content bounties ran 90-677 submissions.)
-CONTENT_ONLY_SKILLS = {"CONTENT", "DESIGN", "GROWTH", "COMMUNITY"}
+# Historical win rate by how many submissions a listing ended up with, from
+# harvest.py's dataset. Shown in the alert so the odds are visible up front.
+WIN_RATE_SOURCE = "1,848 winners across 317 listings, measured 2026-10-13"
+WIN_RATE_BANDS = (
+    (0, 10, 38.2),
+    (11, 25, 21.9),
+    (26, 50, 9.7),
+    (51, 100, 8.0),
+    (101, 250, 4.1),
+    (251, None, 2.1),
+)
+BASE_WIN_RATE = 4.6
+
+# Skills are NOT filtered on. Content appears in 86.7% of winning listings
+# and 84.7% of losing ones — a 1.02 lift, i.e. no signal. It is shown in the
+# alert because it is worth reading, just not worth rejecting on.
 
 POLL_MINUTES = 15
 
@@ -231,19 +242,23 @@ def submission_count(item):
     return (item.get("_count") or {}).get("Submission", 0)
 
 
-def passes_detail_filter(detail):
-    """Checks needing the detail payload. Returns (ok, reason, region).
+def listing_facts(detail):
+    """Pull the reportable facts out of the detail payload.
 
-    Region is reported, never rejected on.
+    Nothing here rejects a listing any more: region and skills are both
+    things to read in the alert, not things to filter on.
     """
     region = (detail.get("region") or "").strip()
+    skills = [s.get("skills") for s in (detail.get("skills") or []) if s.get("skills")]
+    return region, skills
 
-    skills = detail.get("skills") or []
-    names = {(s.get("skills") or "").upper() for s in skills}
-    if names and names.issubset(CONTENT_ONLY_SKILLS):
-        return False, f"content-only skills {sorted(names)}", region
 
-    return True, "ok", region
+def band_for(subs):
+    """(label, historical win rate) for a submission count."""
+    for lo, hi, rate in WIN_RATE_BANDS:
+        if subs >= lo and (hi is None or subs <= hi):
+            return (f"{lo}-{hi}" if hi is not None else f"{lo}+"), rate
+    return "?", None
 
 
 def send_telegram(text):
@@ -281,7 +296,24 @@ def region_line(region, unverified):
     return f"📍 <b>{html.escape(region.upper())} ONLY</b> — region-locked, check if you qualify"
 
 
-def format_alert(item, detail, region, unverified):
+def competition_lines(subs):
+    """The odds, stated up front. Two lines: the band, then the caveat."""
+    label, rate = band_for(subs)
+    if rate is None:
+        return f"👥 <b>{subs}</b> submissions"
+    headline = (f"👥 <b>{subs} submissions — band {label}, "
+                f"historically {rate:.1f}% win rate</b>")
+    if label == "0-10":
+        # The band worth dropping other work for: 8x the 4.6% base rate.
+        return ("🔥🔥🔥 <b>TOP BAND</b> 🔥🔥🔥\n"
+                f"{headline}\n"
+                f"   ↳ best odds there are — worth dropping other work for")
+    if label == "11-25":
+        return f"🔥 {headline}"
+    return headline
+
+
+def format_alert(item, detail, region, unverified, skills=None):
     subs = submission_count(item)
     dl = parse_deadline(item.get("deadline"))
     now = datetime.now(timezone.utc)
@@ -300,16 +332,21 @@ def format_alert(item, detail, region, unverified):
             vals = [f"{v}" for _, v in sorted(rewards.items(), key=lambda kv: str(kv[0]))]
             places = f"\n🏆 {len(vals)} places: {' / '.join(vals)}"
 
-    heat = "  🔥 <b>LOW COMPETITION</b>" if subs <= LOW_SUBMISSIONS else ""
+    skill_line = ""
+    if skills:
+        skill_line = f"\n🧠 {html.escape(', '.join(str(s) for s in skills))}"
 
     # Titles and sponsor names are free text written by sponsors: a stray <
     # or & makes Telegram reject the whole HTML message with a 400.
     return (
         f"<b>{html.escape(str(title))}</b>\n"
         f"{region_line(region, unverified)}\n"
-        f"👥 <b>{subs}</b> submissions{heat}\n"
-        f"💰 {reward} {html.escape(str(token))}  ·  ⏳ {days} days left{places}\n"
-        f"🏢 {html.escape(str(sponsor))}\n\n"
+        f"{competition_lines(subs)}\n"
+        f"💰 {reward} {html.escape(str(token))}  ·  ⏳ {days} days left{places}"
+        f"{skill_line}\n"
+        f"🏢 {html.escape(str(sponsor))}\n"
+        f"<i>Band is the count right now — it will fill up, and the odds "
+        f"drop as it does.</i>\n\n"
         f"{BASE}/earn/listing/{slug}"
     )
 
@@ -350,26 +387,22 @@ def run_once(seen):
 
         if detail is None:
             # Could not verify. Alert anyway, clearly flagged.
-            matches.append((item, None, "", True))
+            matches.append((item, None, "", True, []))
             continue
 
-        ok, reason, region = passes_detail_filter(detail)
-        if not ok:
-            seen.add(lid)  # checked and rejected — don't re-check every cycle
-            log(f"  skip {slug}: {reason}")
-            continue
-
-        matches.append((item, detail, region, False))
+        region, skills = listing_facts(detail)
+        matches.append((item, detail, region, False, skills))
 
     # Most-crowded first, so the least-crowded bounty is the LAST message to
     # arrive — in a chat the newest message is the one sitting in front of you.
     matches.sort(key=lambda m: submission_count(m[0]), reverse=True)
 
     new_alerts = 0
-    for item, detail, region, unverified in matches:
+    for item, detail, region, unverified, skills in matches:
         lid = item.get("id")
         slug = item.get("slug", "")
-        text = format_alert(item, detail, region, unverified=unverified)
+        text = format_alert(item, detail, region, unverified=unverified,
+                            skills=skills)
         if send_telegram(text):
             seen.add(lid)
             new_alerts += 1
