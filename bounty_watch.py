@@ -39,6 +39,12 @@ import requests
 # so they are worth seeing and judging by hand — the alert flags the region
 # instead of hiding the listing.
 
+# Regions I am known to be eligible for, so the alert states it plainly
+# instead of telling me to go and check. "Balkan" is here because Superteam
+# Balkan confirmed on 2026-10-14 that their chapter covers Greece. Every
+# other region keeps the check-if-you-qualify warning.
+ELIGIBLE_REGIONS = {"GLOBAL", "BALKAN"}
+
 # Skip anything with more competition than this already. 25 is where the
 # measured win rate falls off a cliff: 21.9% at 11-25 vs 9.7% at 26-50.
 MAX_SUBMISSIONS = 25
@@ -285,15 +291,20 @@ def send_telegram(text):
 
 
 def region_line(region, unverified):
-    """The region, stated loudly. Anything other than Global is flagged,
-    because eligibility is then something you have to check yourself."""
+    """The region, stated loudly. A region I am known to be eligible for says
+    so; anything else is flagged, because eligibility is then something I
+    have to check myself."""
     if unverified:
         return "📍 <b>REGION UNKNOWN</b> — details fetch failed, check it yourself"
     if not region:
         return "📍 <b>REGION NOT STATED</b> — check the listing"
-    if region.upper() == "GLOBAL":
+    up = region.upper()
+    if up == "GLOBAL":
         return "🌍 <b>GLOBAL</b> — open to everyone"
-    return f"📍 <b>{html.escape(region.upper())} ONLY</b> — region-locked, check if you qualify"
+    if up in ELIGIBLE_REGIONS:
+        return (f"✅ <b>{html.escape(up)}</b> — eligible, their chapter "
+                f"covers Greece")
+    return f"📍 <b>{html.escape(up)} ONLY</b> — region-locked, check if you qualify"
 
 
 def competition_lines(subs):

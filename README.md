@@ -38,8 +38,18 @@ content-only filter discarded most of the board in exchange for nothing. Skills
 are shown in the alert because they are worth reading, not worth rejecting on.
 
 Region is deliberately **not** a filter: country-locked listings are the least
-crowded, so they are worth judging by hand. Every alert states the region, and
-flags anything other than Global as region-locked. Alerts are sent
+crowded, so they are worth judging by hand. Every alert states the region.
+
+**Eligible regions** (`ELIGIBLE_REGIONS`) are shown as eligible rather than as
+something to go and check:
+
+- **Global** — open to everyone.
+- **Balkan** — Superteam Balkan confirmed on **2026-10-14** that their chapter
+  covers Greece, so these are enterable. This is the reason the warning is
+  suppressed for Balkan; if that ever changes, remove it from the set.
+
+Every other region is flagged `<REGION> ONLY — region-locked, check if you
+qualify`. Alerts are sent
 most-crowded first, so the least-crowded one is the newest message in the chat,
 and each one carries its win-rate band, with the 0–10 band flagged as TOP BAND.
 
