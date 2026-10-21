@@ -3,34 +3,84 @@
 Polls the public Superteam Earn API every 30 minutes on GitHub Actions and
 sends a Telegram message the first time a listing matches my filters.
 
-Filters (in `bounty_watch.py`, near the top):
+It covers all three Earn categories — **Bounties**, **Projects** and
+**Grants** — which are three different things and are filtered differently.
 
-- not `isWinnersAnnounced`
-- deadline in the future and at least 24 hours away
-- **25 submissions or fewer**
+## The endpoints
 
-That is the whole filter. Every part of it is justified by the measured data
-below; nothing is left in on judgement.
+`?type=bounty` is a red herring: **`type` is not a parameter**. The list
+endpoint discriminates by `tab`, which is why `?type=project` and
+`?type=grant` were silently ignored and returned the open-bounty list.
 
-## Win rate by submission count
-
-From `harvest.py`: **1,848 winners across 317 listings, measured 2026-10-13**.
-If you are reading this months later, re-run `harvest.py` and recompute — these
-numbers are a snapshot, not a constant.
-
-| Submissions in listing | Win rate |
+| What | Call |
 | --- | --- |
-| 0–10 | **38.2%** |
-| 11–25 | **21.9%** |
-| 26–50 | 9.7% |
-| 51–100 | 8.0% |
-| 101–250 | 4.1% |
-| 251+ | 2.1% |
-| *base rate, all submissions* | *4.6%* |
+| Bounties | `/api/listings?tab=bounties&context=all&category=All&status=open&sortBy=Date&order=asc` |
+| Projects | same, `tab=projects` |
+| Grants | `/api/grants?context=all&category=All` |
+| One grant | `/api/grants/<slug>` |
 
-`MAX_SUBMISSIONS = 25` sits exactly on the cliff: 21.9% at 11–25 against 9.7%
-at 26–50. Since the cap is 25, only the first two bands can ever appear in an
-alert.
+`status` ∈ `open` / `review` / `completed`. The `region` param is ignored on
+both endpoints. Verified 2026-10-21: `tab=bounties` returned 12 bounties and
+nothing else, `tab=projects` returned 0 open but 207 with `status=completed`
+(all `type: project`), so the empty result is real and not a broken param.
+
+## The three categories
+
+| | Shape | Signal | Filter |
+| --- | --- | --- | --- |
+| **Bounty** | everyone submits, sponsor picks 1–5 | submission count | not announced · >24h left · **≤25 submissions** |
+| **Project** | you apply, they pick **one** person | application count | not announced · >24h left · **≤10 applications** |
+| **Grant** | rolling, judged individually, pausable | *none* | `isPaused` false · not archived · published |
+
+**Projects are capped at 10, not 25.** Measured on 122 harvested projects:
+every single one had exactly **1** winner, so the odds are 1/applications. The
+project base win rate is **0.98%** against a bounty's **6.30%**, and the cliff
+is at 10/11 — 14.7% at 6–10 collapsing to 5.5% at 11–25.
+
+**Grants have no deadline, no submission count and no `id`** — only a slug.
+`isPaused` and `region` exist solely in the per-grant detail, not the list, so
+each grant needs its own request. 45 of 47 were paused on 2026-10-21, so grants
+are re-checked once every 24h (`GRANT_RESCAN_HOURS`) and a paused grant is
+*not* recorded as seen, because a pause can be lifted. State lives in
+`grants_state.json`, committed like `seen.json`.
+
+`status` is `"OPEN"` on bounties, on completed listings **and on paused
+grants**. It is never used for anything.
+
+## Win rate by entry count
+
+From `harvest.py`, **measured 2026-10-21**: 6,782 winners across 107,677 bounty
+submissions and 122 winners across 12,417 project applications. If you are
+reading this months later, re-run `harvest.py` and recompute — these are a
+snapshot, not a constant.
+
+**Bounties and projects are measured separately**, because a bounty picks up to
+5 winners and a project picks exactly one. Mixing them understates bounty odds
+and wildly overstates project odds.
+
+| Entries in listing | Bounty win rate | Project win rate |
+| --- | --- | --- |
+| 0–5 | **35.4%** (0–10) | **25.0%** |
+| 6–10 | **35.4%** (0–10) | **14.7%** |
+| 11–25 | **18.1%** | 5.5% |
+| 26–50 | 9.6% | 2.8% |
+| 51–100 | 6.6% | 0.6% (51+) |
+| 101–250 | 6.2% | 0.6% (51+) |
+| 251+ | 2.4% | 0.6% (51+) |
+| *base rate* | *6.30%* | *0.98%* |
+
+`MAX_SUBMISSIONS = 25` sits on the bounty cliff (18.1% → 9.6%);
+`MAX_APPLICATIONS = 10` sits on the project cliff (14.7% → 5.5%). Only the
+bands at or below each cap can ever appear in an alert.
+
+**Grants get no band at all.** There is no grant win-rate data — they are not a
+competition — and printing a bounty's percentage on a grant would be a lie.
+
+> Earlier versions of this table (38.2% / 21.9% / …) were computed over
+> bounties *and* projects mixed together, which was wrong: projects have a
+> ~1% win rate and large application counts, which dragged the crowded bands
+> down and the sparse bands up. The numbers above are per-type on a sample
+> four times larger.
 
 **Skills are not filtered on.** Content appears in 86.7% of winning listings
 and 84.7% of losing ones — a lift of 1.02, i.e. no signal whatsoever. The old
