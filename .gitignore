@@ -12,3 +12,8 @@ harvested.tmp
 # Harvested data lives in the PRIVATE repo bounty-watch-data.
 data/
 harvested.json
+
+# προσωρινά αρχεία από curl/τεστ
+web/*.json
+!web/package.json
+!web/vercel.json
