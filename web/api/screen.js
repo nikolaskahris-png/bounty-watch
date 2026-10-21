@@ -315,7 +315,9 @@ export default async function handler(req, res) {
       res2 = await callWebacy(`/addresses/${encodeURIComponent(t.value)}?chain=${t.chain || "eth"}`);
       item = threatItem(t, res2);
     }
-    calls++;
+    // Only count a call that actually left the building. Counting an
+    // unconfigured key as a "call" would overstate quota use in meta.
+    if (res2.transport !== "unconfigured") calls++;
     if (item.state !== "error" && item.state !== "quota") cacheSet(ck, item);
     out.items.push(item);
     if (item.state === "quota") {

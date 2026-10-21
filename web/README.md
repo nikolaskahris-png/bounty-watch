@@ -4,16 +4,21 @@ One page. Paste a Superteam Earn listing URL — or any URL, or an on-chain
 address — and it screens the things that listing asks you to click or
 interact with, using the Webacy / DD.xyz risk APIs, and shows what came back.
 
-## Status — 2026-10-21
+## Status — 2026-10-22
+
+**Live: https://bounty-screen.vercel.app** (no login, no signup)
 
 | Part | State |
 | --- | --- |
-| Input parsing (listing URL, bare URL, schemeless domain, EVM, Solana, junk) | verified locally against the live Superteam API |
+| Deployed, publicly reachable | verified: HTTP 200, no SSO gate, ~0.3–0.6 s |
+| Input parsing (listing URL, bare URL, schemeless domain, EVM, Solana, junk) | verified live on the deployment |
 | Listing fetch + target extraction | verified: 5 screenable links found on a real listing |
-| API key kept server-side | verified: a sentinel key never appears in the response |
+| API key kept server-side | verified live: a sentinel key in the real env never appears in the JSON or the HTML |
+| Key-rejected vs key-missing are distinct faults | verified live: sentinel key returns "The screening API rejected the key", HTTP 401 |
 | Endpoint paths | verified to exist (401 with an invalid key; a nonexistent path gives 403) |
-| Webacy response handling | **unverified — needs a real Demo key** |
-| Deployment | **not deployed yet — needs hosting auth** |
+| Webacy response handling (clean / flagged / no data) | **unverified — needs a real Demo key** |
+| Whether the Demo plan entitles all three endpoints | **unverified — needs a real key** |
+| Quota (402) handling | **unverified — cannot be triggered on purpose** |
 
 ## Read first: what this cannot do
 

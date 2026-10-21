@@ -1,0 +1,3 @@
+Protected by Vercel Authentication
+To access this deployment with an authenticated Vercel CLI, run: vercel curl <deployment-url>
+With an authorized Vercel MCP connection (https://mcp.vercel.com), call web_fetch_vercel_url with url set to the full deployment URL.
