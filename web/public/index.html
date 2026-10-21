@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bounty Screen</title>
+<meta name="description" content="Paste a Superteam Earn listing and see what automated risk screening says about the links and addresses it asks you to touch.">
+<style>
+  :root{
+    --bg:#fbfbfa; --panel:#fff; --ink:#15171a; --muted:#5d6570; --line:#e4e6e9;
+    --clean:#0f7a4f; --clean-bg:#eaf6f0; --flag:#a3301c; --flag-bg:#fdeeea;
+    --nodata:#5a5f66; --nodata-bg:#f1f2f4; --quota:#8a5a00; --quota-bg:#fdf3e0;
+    --accent:#1f4fd8;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131517; --panel:#1b1e21; --ink:#edeef0; --muted:#a0a7b0; --line:#2c3034;
+      --clean:#5ad19a; --clean-bg:#13291f; --flag:#ff9b86; --flag-bg:#2e1713;
+      --nodata:#a6adb6; --nodata-bg:#23262a; --quota:#e8b45c; --quota-bg:#2b2113;
+      --accent:#8fb0ff;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131517; --panel:#1b1e21; --ink:#edeef0; --muted:#a0a7b0; --line:#2c3034;
+    --clean:#5ad19a; --clean-bg:#13291f; --flag:#ff9b86; --flag-bg:#2e1713;
+    --nodata:#a6adb6; --nodata-bg:#23262a; --quota:#e8b45c; --quota-bg:#2b2113;
+    --accent:#8fb0ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+  .wrap{max-width:760px;margin:0 auto;padding:40px 16px 64px}
+  h1{font-size:1.5rem;margin:0 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin:0 0 24px;font-size:.95rem}
+  form{display:flex;gap:8px;flex-wrap:wrap}
+  input{flex:1 1 320px;min-width:0;padding:12px 14px;font-size:1rem;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  input:focus{outline:2px solid var(--accent);outline-offset:1px}
+  button{padding:12px 20px;font-size:1rem;font-weight:600;color:#fff;background:var(--accent);
+    border:0;border-radius:10px;cursor:pointer}
+  button:disabled{opacity:.55;cursor:default}
+  .examples{margin:12px 0 0;font-size:.85rem;color:var(--muted)}
+  .examples button{all:unset;color:var(--accent);cursor:pointer;text-decoration:underline;
+    font-size:.85rem;margin-right:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:16px 18px;margin:16px 0}
+  .listing{font-size:.9rem;color:var(--muted)}
+  .listing strong{color:var(--ink);font-size:1rem}
+  .item{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0;
+    background:var(--panel)}
+  .badge{display:inline-block;font-size:.72rem;font-weight:700;letter-spacing:.06em;
+    text-transform:uppercase;padding:3px 9px;border-radius:999px;margin-bottom:8px}
+  .s-clean{color:var(--clean);background:var(--clean-bg)}
+  .s-flagged{color:var(--flag);background:var(--flag-bg)}
+  .s-nodata{color:var(--nodata);background:var(--nodata-bg)}
+  .s-quota{color:var(--quota);background:var(--quota-bg)}
+  .s-error{color:var(--flag);background:var(--flag-bg)}
+  .label{font-weight:650}
+  .target{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82rem;
+    color:var(--muted);word-break:break-all;margin:2px 0 8px}
+  .headline{margin:6px 0 4px}
+  .detail,.why{font-size:.88rem;color:var(--muted);margin:3px 0}
+  .ep{font-family:ui-monospace,monospace;font-size:.75rem;color:var(--muted);
+    border-top:1px solid var(--line);margin-top:10px;padding-top:8px;word-break:break-all}
+  details{margin-top:8px}
+  summary{cursor:pointer;font-size:.82rem;color:var(--accent)}
+  pre{overflow:auto;background:var(--nodata-bg);padding:10px;border-radius:8px;
+    font-size:.74rem;max-height:260px;margin:8px 0 0}
+  .note{font-size:.88rem;color:var(--muted);background:var(--nodata-bg);
+    border-radius:8px;padding:9px 12px;margin:8px 0}
+  .meta{font-size:.8rem;color:var(--muted);margin-top:14px}
+  footer{margin-top:28px;padding-top:16px;border-top:1px solid var(--line);
+    font-size:.82rem;color:var(--muted)}
+  .err{color:var(--flag)}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;
+    border-right-color:transparent;border-radius:50%;animation:s .7s linear infinite;
+    vertical-align:-1px;margin-right:6px}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Bounty Screen</h1>
+  <p class="sub">Paste a Superteam Earn listing and see what automated risk screening says
+     about the links and addresses it asks you to touch. A bare URL or an on-chain
+     address works too.</p>
+
+  <form id="f">
+    <input id="q" name="q" autocomplete="off" spellcheck="false"
+           placeholder="https://superteam.fun/earn/listing/… or a URL or 0x… address"
+           aria-label="Listing URL, URL, or on-chain address">
+    <button id="go" type="submit">Screen it</button>
+  </form>
+  <p class="examples">
+    Try:
+    <button type="button" data-q="https://superteam.fun/earn/listing/vaultline-security-audit-grants-for-colosseum-projects-up-to-4000-usdc-each">a real listing</button>
+    <button type="button" data-q="0x0000000000000000000000000000000000000000">an address</button>
+    <button type="button" data-q="https://superteam.fun">a plain URL</button>
+  </p>
+
+  <div id="out" aria-live="polite"></div>
+
+  <footer>
+    Automated screening of public data, not advice. A clean result is not a guarantee —
+    it only means the screening API reported nothing, and absence of data is not
+    absence of risk. Risk data from the
+    <a href="https://docs.webacy.com" target="_blank" rel="noopener">Webacy / DD.xyz APIs</a>;
+    listing data from Superteam Earn. Results are shown exactly as the API returned them.
+  </footer>
+</div>
+
+<script>
+const out = document.getElementById('out');
+const qEl = document.getElementById('q');
+const go  = document.getElementById('go');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const WORDS = {
+  clean:   'Nothing reported',
+  flagged: 'Flagged',
+  nodata:  'No data',
+  quota:   'Quota reached',
+  error:   'Could not check'
+};
+
+document.querySelectorAll('.examples button').forEach(b =>
+  b.addEventListener('click', () => { qEl.value = b.dataset.q; document.getElementById('f').requestSubmit(); }));
+
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const q = qEl.value.trim();
+  if (!q) return;
+  go.disabled = true;
+  out.innerHTML = '<div class="card"><span class="spin"></span>Screening — each check is spaced one second apart to respect the free plan…</div>';
+  try {
+    const r = await fetch('/api/screen?q=' + encodeURIComponent(q));
+    const d = await r.json();
+    if (!r.ok) { out.innerHTML = '<div class="card err">' + esc(d.error || ('HTTP ' + r.status)) + '</div>'; return; }
+    render(d);
+  } catch (err) {
+    out.innerHTML = '<div class="card err">Request failed: ' + esc(err) + '</div>';
+  } finally { go.disabled = false; }
+});
+
+function render(d) {
+  let h = '';
+  if (d.listing) {
+    const L = d.listing;
+    h += '<div class="card listing"><strong>' + esc(L.title) + '</strong><br>' +
+      esc([L.type, L.sponsor && ('by ' + L.sponsor), L.region,
+           (L.reward != null ? L.reward + ' ' + (L.token || '') : null)]
+          .filter(Boolean).join(' · ')) +
+      (L.sponsor_caution ? '<br><span class="s-flagged badge">Superteam flags this sponsor</span>' : '') +
+      '<br><a href="' + esc(L.url) + '" target="_blank" rel="noopener">open the listing</a></div>';
+  }
+  for (const n of (d.notes || [])) h += '<div class="note">' + esc(n) + '</div>';
+
+  if (!(d.items || []).length) {
+    h += '<div class="card">Nothing on this listing could be screened — see above.</div>';
+  }
+  for (const it of (d.items || [])) {
+    h += '<div class="item">' +
+      '<span class="badge s-' + esc(it.state) + '">' + esc(WORDS[it.state] || it.state) + '</span>' +
+      '<div class="label">' + esc(it.label || '') + '</div>' +
+      '<div class="target">' + esc(it.checked || '') + '</div>' +
+      '<div class="headline">' + esc(it.headline || '') + '</div>' +
+      (it.detail ? '<div class="detail">' + esc(it.detail) + '</div>' : '') +
+      (it.why ? '<div class="why">Why this was checked: ' + esc(it.why) + '</div>' : '') +
+      '<div class="ep">' + esc(it.endpoint_called || '') +
+        (it.from_cache ? ' · served from cache' : '') + '</div>' +
+      (it.raw ? '<details><summary>Show what the API returned</summary><pre>' +
+        esc(JSON.stringify(it.raw, null, 1)) + '</pre></details>' : '') +
+      '</div>';
+  }
+  const m = d.meta || {};
+  if (m.api_calls_made !== undefined) {
+    h += '<p class="meta">' + m.api_calls_made + ' live API call(s), ' +
+      (m.served_from_cache || 0) + ' from cache. Results are cached for ' +
+      m.cache_ttl_hours + 'h, at most ' + m.max_calls_per_screen + ' calls per screen.</p>';
+  }
+  out.innerHTML = h;
+}
+</script>
+</body>
+</html>

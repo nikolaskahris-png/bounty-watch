@@ -1,0 +1,8 @@
+{
+  "name": "bounty-screen",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "One-page risk screening for Superteam Earn listings. No dependencies.",
+  "engines": { "node": ">=20" }
+}
