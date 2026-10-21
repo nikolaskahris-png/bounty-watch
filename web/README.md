@@ -8,17 +8,38 @@ interact with, using the Webacy / DD.xyz risk APIs, and shows what came back.
 
 **Live: https://bounty-screen.vercel.app** (no login, no signup)
 
-| Part | State |
+All three endpoints work on the free Demo plan. Verified against live responses:
+
+| Case | Result |
 | --- | --- |
-| Deployed, publicly reachable | verified: HTTP 200, no SSO gate, ~0.3–0.6 s |
-| Input parsing (listing URL, bare URL, schemeless domain, EVM, Solana, junk) | verified live on the deployment |
-| Listing fetch + target extraction | verified: 5 screenable links found on a real listing |
-| API key kept server-side | verified live: a sentinel key in the real env never appears in the JSON or the HTML |
-| Key-rejected vs key-missing are distinct faults | verified live: sentinel key returns "The screening API rejected the key", HTTP 401 |
-| Endpoint paths | verified to exist (401 with an invalid key; a nonexistent path gives 403) |
-| Webacy response handling (clean / flagged / no data) | **unverified — needs a real Demo key** |
-| Whether the Demo plan entitles all three endpoints | **unverified — needs a real key** |
-| Quota (402) handling | **unverified — cannot be triggered on purpose** |
+| `google.com` | **clean** — `riskLevel: low`, "known as a safe project address" |
+| `superteam.fun` | **no data** — `riskLevel: unknown`, "Inconclusive." |
+| USDC contract on eth | threat **clean**; contract **flagged** — "State Variable Not Initialized (severity 2)" |
+| Tornado Cash wallet | **flagged** — Sanctioned (severity 10), Interacted with Drainer (severity 1) |
+| Unused wallet | **no data** — `insufficient_wallet_balance`, `insufficient_wallet_transactions` |
+| Wrapped SOL, `chain=sol` | **clean** — threat screening does work on Solana |
+| Key kept server-side | verified live: a sentinel key never appeared in any response or the HTML |
+
+### The URL endpoint is mostly "no data", and that is the honest finding
+
+`POST /url` only recognises projects already on its list. `google.com` comes
+back `low`; **`superteam.fun` comes back `unknown` / "Inconclusive."**, and so
+did an obvious phishing-shaped domain. So for most sponsor links the right
+answer is "we have no information about this URL", and the page says exactly
+that. It is neither a pass nor a flag.
+
+### Tags carry a numeric severity, and 0 means informational
+
+USDC ships a `Verified Listing` tag at `severity: 0`. An earlier version of
+this code flagged any tag at all, which marked USDC as risky and
+`superteam.fun` as flagged. Only `severity > 0` counts as a flag now.
+
+### A wallet is not a contract
+
+`GET /contracts` answers `400 "… is not a contract. Use the address risk
+endpoint for EOA wallets."` for a plain wallet. The threat call runs first, and
+`/contracts` is skipped when it reports `addressType: EOA` — one less quota call
+and a clear message instead of an error.
 
 ## Read first: what this cannot do
 

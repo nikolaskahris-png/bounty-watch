@@ -136,23 +136,45 @@ async function callWebacy(path, { method = "GET", body } = {}) {
   return { transport: "ok", status: r.status, json };
 }
 
+// Observed 2026-10-22 against the live Demo plan:
+//   google.com                 -> riskLevel "low",     "known as a safe project address"
+//   superteam.fun              -> riskLevel "unknown", "Inconclusive."
+//   an obvious phishing domain -> riskLevel "unknown", "Inconclusive."
+// So "unknown" means the API has no opinion, and it is the COMMON case for
+// anything outside its curated list. It must read as "no data", never as a
+// pass and never as a flag.
 function urlItem(t, res) {
   const base = { ...t, endpoint_called: "POST /url", checked: t.value };
   if (res.transport !== "ok") return { ...base, ...stateFromTransport(res) };
   const d = res.json || {};
-  const level = (d.riskLevel ?? "").toString();
-  if (!level) {
-    return { ...base, state: "nodata", headline: "No information about this URL",
-             detail: d.message || d.description || "The API returned no risk level for it.", raw: d };
+  const level = (d.riskLevel ?? "").toString().toLowerCase();
+  const note = d.description || "";
+
+  if (!level || level === "unknown" || /inconclusive/i.test(note)) {
+    return { ...base, state: "nodata",
+             headline: "We have no information about this URL",
+             detail: `The API answered "${d.riskLevel ?? "nothing"}" — ${note || "no description"}. `
+                   + "It only recognises projects already on its list, so this is not a pass.",
+             raw: d };
   }
-  const clean = /^(none|low|safe|no risk|clean)$/i.test(level);
-  return {
-    ...base,
-    state: clean ? "clean" : "flagged",
-    headline: clean ? `No risk reported (riskLevel: ${level})` : `Flagged — riskLevel: ${level}`,
-    detail: d.description || d.message || "",
-    raw: d,
-  };
+  if (/^(none|low|safe|no risk|clean)$/.test(level)) {
+    return { ...base, state: "clean", headline: `No risk reported (riskLevel: ${d.riskLevel})`,
+             detail: note, raw: d };
+  }
+  return { ...base, state: "flagged", headline: `Flagged — riskLevel: ${d.riskLevel}`,
+           detail: note, raw: d };
+}
+
+// Their tags carry a numeric `severity`. severity 0 is informational — USDC
+// ships "Verified Listing" at severity 0 — so only severity > 0 is a risk.
+// Treating any tag as a flag marked USDC as dangerous in testing.
+function riskyTags(tags) {
+  return (Array.isArray(tags) ? tags : [])
+    .filter((x) => x && Number(x.severity) > 0)
+    .map((x) => `${x.name || x.key} (severity ${x.severity})`);
+}
+function allTagKeys(tags) {
+  return (Array.isArray(tags) ? tags : []).map((x) => (x && (x.key || x.name)) || "").filter(Boolean);
 }
 
 function contractItem(t, res) {
@@ -160,23 +182,29 @@ function contractItem(t, res) {
   if (res.transport !== "ok") return { ...base, ...stateFromTransport(res) };
   const d = res.json || {};
   const tags = Array.isArray(d.tags) ? d.tags : [];
-  const cats = Array.isArray(d.categories) ? d.categories : [];
-  if (d.analysis_status && /pending|running|queued/i.test(d.analysis_status)) {
-    return { ...base, state: "nodata", headline: "Analysis still running",
-             detail: `The API reports analysis_status "${d.analysis_status}" and has nothing final yet.`, raw: d };
+  const risky = riskyTags(tags);
+
+  if (!tags.length && d.score === undefined && d.riskScore === undefined) {
+    return { ...base, state: "nodata", headline: "We have no information about this contract",
+             detail: "The API returned no score and no tags for it.", raw: d };
   }
-  if (!tags.length && !cats.length && d.score === undefined) {
-    return { ...base, state: "nodata", headline: "No information about this contract",
-             detail: "The API returned no score, tags or categories for it.", raw: d };
+  const extras = [
+    d.riskScore !== undefined ? `riskScore: ${d.riskScore}` : null,
+    d.score !== undefined ? `score: ${d.score}` : null,
+    d.verified !== undefined ? `source verified: ${d.verified}` : null,
+    d.analysis_status ? `analysis_status: ${d.analysis_status}` : null,
+  ].filter(Boolean).join(" · ");
+
+  if (risky.length) {
+    return { ...base, state: "flagged", headline: `Flagged — ${risky.slice(0, 6).join(", ")}`,
+             detail: extras, raw: d };
   }
-  const flagged = tags.length > 0 || cats.length > 0;
+  const info = allTagKeys(tags);
   return {
-    ...base,
-    state: flagged ? "flagged" : "clean",
-    headline: flagged
-      ? `Flagged — tags: ${[...new Set([...tags, ...cats])].slice(0, 6).join(", ")}`
-      : `No tags or categories reported (score: ${d.score})`,
-    detail: d.score !== undefined ? `The API's own risk score is ${d.score}.` : "",
+    ...base, state: "clean",
+    headline: "No risk tags reported"
+      + (info.length ? ` (informational only: ${info.slice(0, 4).join(", ")})` : ""),
+    detail: extras,
     raw: d,
   };
 }
@@ -186,29 +214,40 @@ function threatItem(t, res) {
   if (res.transport !== "ok") return { ...base, ...stateFromTransport(res) };
   const d = res.json || {};
   const issues = Array.isArray(d.issues) ? d.issues : [];
+  const allTags = issues.flatMap((i) => (i && Array.isArray(i.tags) ? i.tags : []));
+  const risky = riskyTags(allTags);
+  const keys = allTagKeys(allTags);
   const high = Number(d.high || 0), medium = Number(d.medium || 0);
-  const noSignal = !issues.length && !high && !medium &&
-                   d.overallRisk === undefined && !d.addressType;
-  if (noSignal) {
+  const info = d.details && d.details.address_info ? d.details.address_info : {};
+
+  const extras = [
+    d.overallRisk !== undefined ? `overallRisk: ${d.overallRisk}` : null,
+    `${high} high / ${medium} medium`,
+    d.addressType ? `addressType: ${d.addressType}` : null,
+    info.transaction_count !== undefined ? `${info.transaction_count} transactions` : null,
+  ].filter(Boolean).join(" · ");
+
+  if (risky.length || high > 0) {
+    return { ...base, state: "flagged",
+             headline: `Flagged — ${risky.length ? risky.slice(0, 6).join(", ") : `${high} high-risk findings`}`,
+             detail: extras, raw: d };
+  }
+  // The API says "I know nothing" by returning severity-0 insufficient_*
+  // tags on an address with no history — not by returning an empty body.
+  const insufficient = keys.some((k) => /^insufficient/i.test(k));
+  if (insufficient || info.has_no_transactions === true) {
     return { ...base, state: "nodata",
              headline: "We have no information about this address",
-             detail: "The API knows the address but reports no risk data for it.", raw: d };
+             detail: `The API reports no usable history for it`
+                   + (keys.length ? ` (${keys.slice(0, 3).join(", ")})` : "")
+                   + `. ${extras}. That is not a pass — it is an absence of data.`,
+             raw: d };
   }
-  const flagged = issues.length > 0 || high > 0 || medium > 0;
-  const names = issues.flatMap((i) =>
-    (i && i.tags ? i.tags.map((x) => x.name || x.key).filter(Boolean) : [])).slice(0, 6);
   return {
-    ...base,
-    state: flagged ? "flagged" : "clean",
-    headline: flagged
-      ? `Flagged — ${high} high / ${medium} medium risk findings` + (names.length ? `: ${names.join(", ")}` : "")
-      : "No risk findings reported",
-    detail: [
-      d.overallRisk !== undefined ? `overallRisk: ${d.overallRisk}` : null,
-      d.addressType ? `addressType: ${d.addressType}` : null,
-      d.count !== undefined ? `${d.count} transactions seen` : null,
-    ].filter(Boolean).join(" · "),
-    raw: d,
+    ...base, state: "clean",
+    headline: "No risk findings reported"
+      + (keys.length ? ` (informational only: ${keys.slice(0, 4).join(", ")})` : ""),
+    detail: extras, raw: d,
   };
 }
 
@@ -230,9 +269,16 @@ function stateFromTransport(res) {
                detail: "The API accepted the request but has no finished analysis (HTTP 202)." };
     case "network":
       return { state: "error", headline: "Could not reach the screening API", detail: res.message || "" };
-    default:
+    default: {
+      // Safety net: /contracts answers 400 with this message for a wallet.
+      const msg = (res.body && res.body.message) || "";
+      if (res.status === 400 && /not a contract/i.test(msg)) {
+        return { state: "nodata", headline: "Not a contract, so there is nothing to analyse",
+                 detail: msg };
+      }
       return { state: "error", headline: `Screening API error (HTTP ${res.status})`,
-               detail: typeof res.body === "object" ? JSON.stringify(res.body).slice(0, 300) : "" };
+               detail: msg || (typeof res.body === "object" ? JSON.stringify(res.body).slice(0, 300) : "") };
+    }
   }
 }
 
@@ -302,6 +348,19 @@ export default async function handler(req, res) {
       res2 = await callWebacy("/url", { method: "POST", body: { url: t.value } });
       item = urlItem(t, res2);
     } else if (t.endpoint === "contract") {
+      // The threat call runs first and reports addressType. If this is a
+      // plain wallet, /contracts answers 400 "is not a contract", so skip
+      // it: one less quota call and an honest message instead of an error.
+      const prior = out.items.find(
+        (x) => x.endpoint === "threat" && (x.checked || "").toLowerCase() === t.value.toLowerCase());
+      const isEOA = prior && prior.raw &&
+        (prior.raw.addressType === "EOA" || prior.raw.isContract === false);
+      if (isEOA) {
+        out.items.push({ ...t, endpoint_called: "GET /contracts (not attempted)", checked: t.value,
+          state: "nodata", headline: "Not a contract, so there is nothing to analyse",
+          detail: `The address endpoint reports addressType "${prior.raw.addressType}" — a plain wallet. Contract analysis only applies to deployed contracts.` });
+        continue;
+      }
       if (!CONTRACT_CHAINS.includes(t.chain)) {
         item = { ...t, endpoint_called: "GET /contracts (not attempted)", checked: t.value,
                  state: "nodata", headline: "Contract screening is not available for this chain",
