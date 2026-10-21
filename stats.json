@@ -1,0 +1,84 @@
+{
+ "generated_at": "2026-10-21",
+ "min_band_entries": 25,
+ "totals": {
+  "bounty": {
+   "listings": 1155,
+   "entries": 107677,
+   "winners": 6782,
+   "base_win_rate_pct": 6.3
+  },
+  "project": {
+   "listings": 122,
+   "entries": 12417,
+   "winners": 122,
+   "base_win_rate_pct": 0.98
+  }
+ },
+ "bands": {
+  "bounty": [
+   {
+    "band": "0-10",
+    "entries": 254,
+    "winners": 90,
+    "win_rate_pct": 35.4
+   },
+   {
+    "band": "11-25",
+    "entries": 2440,
+    "winners": 441,
+    "win_rate_pct": 18.1
+   },
+   {
+    "band": "26-50",
+    "entries": 9890,
+    "winners": 951,
+    "win_rate_pct": 9.6
+   },
+   {
+    "band": "51-100",
+    "entries": 25026,
+    "winners": 1643,
+    "win_rate_pct": 6.6
+   },
+   {
+    "band": "101-250",
+    "entries": 51455,
+    "winners": 3202,
+    "win_rate_pct": 6.2
+   },
+   {
+    "band": "251+",
+    "entries": 18612,
+    "winners": 455,
+    "win_rate_pct": 2.4
+   }
+  ],
+  "project": [
+   {
+    "band": "0-10",
+    "entries": 46,
+    "winners": 8,
+    "win_rate_pct": 17.4
+   },
+   {
+    "band": "11-25",
+    "entries": 330,
+    "winners": 18,
+    "win_rate_pct": 5.5
+   },
+   {
+    "band": "26-50",
+    "entries": 1117,
+    "winners": 31,
+    "win_rate_pct": 2.8
+   },
+   {
+    "band": "51+",
+    "entries": 10924,
+    "winners": 65,
+    "win_rate_pct": 0.6
+   }
+  ]
+ }
+}

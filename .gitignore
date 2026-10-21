@@ -8,3 +8,7 @@ __pycache__/
 *.pyc
 seen.tmp
 harvested.tmp
+
+# Harvested data lives in the PRIVATE repo bounty-watch-data.
+data/
+harvested.json

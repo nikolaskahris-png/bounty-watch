@@ -87,8 +87,14 @@ import requests
 import bounty_watch as bw
 
 HERE = bw.HERE
-DATA = HERE / "data"
-HARVESTED_FILE = HERE / "harvested.json"
+
+# The harvested data holds third-party usernames and personal links, so it
+# lives in a separate PRIVATE repo. This code stays public and auditable.
+# HARVEST_DATA_DIR points at that private checkout; without it, data sits
+# beside the script as before, which is what a local run does.
+DATA_ROOT = Path(os.environ.get("HARVEST_DATA_DIR") or HERE)
+DATA = DATA_ROOT / "data"
+HARVESTED_FILE = DATA_ROOT / "harvested.json"
 LISTINGS_LOG = DATA / "listings.jsonl"
 FAIL_LOG = DATA / "harvest_failures.jsonl"
 

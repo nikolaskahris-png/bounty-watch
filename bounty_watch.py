@@ -74,8 +74,9 @@ BOUNTY_BANDS = (
     (251, None, 2.4),
 )
 PROJECT_BANDS = (
-    (0, 5, 25.0),
-    (6, 10, 14.7),
+    # 0-5 and 6-10 are merged: 0-5 held only 12 rows, too thin for a rate
+    # anyone should act on (make_stats.py suppresses bands under 25).
+    (0, 10, 17.4),
     (11, 25, 5.5),
     (26, 50, 2.8),
     (51, None, 0.6),
