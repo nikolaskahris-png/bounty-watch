@@ -20,21 +20,25 @@ permissions:
 jobs:
   ping:
     runs-on: ubuntu-latest
+    # The `secrets` context is NOT available in a step-level `if`, only `env`
+    # is — testing secrets.* there makes the whole workflow file invalid.
+    env:
+      KEEPALIVE_PAT: ${{ secrets.KEEPALIVE_PAT }}
     steps:
       - name: No PAT configured
-        if: ${{ secrets.KEEPALIVE_PAT == '' }}
+        if: ${{ env.KEEPALIVE_PAT == '' }}
         run: |
           echo "KEEPALIVE_PAT is not set."
           echo "Click 'Run workflow' on bounty-watch once a month instead,"
           echo "or add the PAT — see README."
 
       - uses: actions/checkout@v4
-        if: ${{ secrets.KEEPALIVE_PAT != '' }}
+        if: ${{ env.KEEPALIVE_PAT != '' }}
         with:
-          token: ${{ secrets.KEEPALIVE_PAT }}
+          token: ${{ env.KEEPALIVE_PAT }}
 
       - name: Push a dated keepalive commit
-        if: ${{ secrets.KEEPALIVE_PAT != '' }}
+        if: ${{ env.KEEPALIVE_PAT != '' }}
         run: |
           date -u "+%Y-%m-%dT%H:%M:%SZ" > .keepalive
           git config user.name  "${GITHUB_ACTOR}"
