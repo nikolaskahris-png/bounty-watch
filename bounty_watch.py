@@ -35,15 +35,19 @@ import requests
 # CONFIG — filters you may want to tune
 # ----------------------------------------------------------------------------
 
-# Region is NOT a filter. Country-locked listings are the least crowded ones,
-# so they are worth seeing and judging by hand — the alert flags the region
-# instead of hiding the listing.
-
-# Regions I am known to be eligible for, so the alert states it plainly
-# instead of telling me to go and check. "Balkan" is here because Superteam
-# Balkan confirmed on 2026-10-14 that their chapter covers Greece. Every
-# other region keeps the check-if-you-qualify warning.
+# Regions I am eligible for. Since 2026-10-25 this IS a filter: a listing
+# locked to any other region (Poland, India, UK...) is never alerted, because
+# I cannot enter it. "Balkan" is here because Superteam Balkan confirmed on
+# 2026-10-14 that their chapter covers Greece.
+# A listing whose region is unknown (details fetch failed) or not stated is
+# still alerted, flagged, so nothing I could enter is silently dropped.
 ELIGIBLE_REGIONS = {"GLOBAL", "BALKAN"}
+
+
+def region_blocked(region):
+    """True only when the region is stated AND it is not one I can enter."""
+    r = (region or "").strip().upper()
+    return bool(r) and r not in ELIGIBLE_REGIONS
 
 # BOUNTY: everyone submits, the sponsor picks 1-5 winners. 25 is where the
 # measured win rate falls off a cliff: 18.1% at 11-25 vs 9.6% at 26-50.
@@ -537,6 +541,11 @@ def scan_grants(now):
         if detail.get("isArchived") or not detail.get("isPublished"):
             log(f"  skip grant {slug}: archived/unpublished")
             continue
+        if region_blocked(detail.get("region")):
+            # Recorded as handled so it is not re-fetched every day.
+            alerted.add(slug)
+            log(f"  skip grant {slug}: region {detail.get('region')}, not eligible")
+            continue
 
         if send_telegram(format_grant_alert(detail)):
             alerted.add(slug)
@@ -595,6 +604,12 @@ def run_once(seen):
                 continue
 
             region, skills = listing_facts(detail)
+            if region_blocked(region):
+                # A listing's region does not change, so mark it seen: no
+                # point re-fetching its details every 30 minutes.
+                seen.add(lid)
+                log(f"  skip [{kind}] {slug}: region {region}, not eligible")
+                continue
             matches.append((item, detail, region, False, skills, kind))
 
     # Most-crowded first, so the least-crowded one is the LAST message to
